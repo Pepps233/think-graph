@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import papers, jobs
+from app.api.routes import papers, jobs, graph
 
 app = FastAPI(title="ThinkGraph API", version="0.1.0")
 
@@ -15,6 +15,7 @@ app.add_middleware(
 
 app.include_router(papers.router)
 app.include_router(jobs.router)
+app.include_router(graph.router)
 
 
 @app.get("/health")
