@@ -88,8 +88,8 @@ class TestIngestPaperArxiv:
         with (
             patch("app.db.postgres_client._client", db_mock),
             patch("workers.tasks._fetch_arxiv") as mock_fetch,
-            patch("workers.tasks.upload_pdf", return_value="pdfs/hash.pdf") as mock_upload,
-            patch("workers.tasks.parse_pdf", return_value=MagicMock()) as mock_parse,
+            patch("app.services.storage.upload_pdf", return_value="pdfs/hash.pdf") as mock_upload,
+            patch("app.services.pdf_parser.parse_pdf", return_value=MagicMock()) as mock_parse,
         ):
             # asyncio.run() wraps the coroutine; mock _fetch_arxiv to return immediately
             import asyncio
@@ -118,8 +118,8 @@ class TestIngestPaperArxiv:
         with (
             patch("app.db.postgres_client._client", db_mock),
             patch("workers.tasks._fetch_arxiv") as mock_fetch,
-            patch("workers.tasks.upload_pdf", return_value="pdfs/hash.pdf"),
-            patch("workers.tasks.parse_pdf", return_value=MagicMock()),
+            patch("app.services.storage.upload_pdf", return_value="pdfs/hash.pdf"),
+            patch("app.services.pdf_parser.parse_pdf", return_value=MagicMock()),
         ):
             import asyncio
 
@@ -154,8 +154,8 @@ class TestIngestPaperArxiv:
         with (
             patch("app.db.postgres_client._client", db_mock),
             patch("workers.tasks._fetch_arxiv") as mock_fetch,
-            patch("workers.tasks.upload_pdf", return_value="pdfs/hash.pdf") as mock_upload,
-            patch("workers.tasks.parse_pdf", return_value=MagicMock()),
+            patch("app.services.storage.upload_pdf", return_value="pdfs/hash.pdf") as mock_upload,
+            patch("app.services.pdf_parser.parse_pdf", return_value=MagicMock()),
         ):
             async def fake_fetch(arxiv_id):
                 return pdf_bytes, {"title": "T", "abstract": "A", "authors": [], "doi": None, "source_url": "u"}
@@ -179,8 +179,8 @@ class TestIngestPaperArxiv:
         with (
             patch("app.db.postgres_client._client", db_mock),
             patch("workers.tasks._fetch_arxiv") as mock_fetch,
-            patch("workers.tasks.upload_pdf", return_value="pdfs/hash.pdf"),
-            patch("workers.tasks.parse_pdf", return_value=MagicMock()),
+            patch("app.services.storage.upload_pdf", return_value="pdfs/hash.pdf"),
+            patch("app.services.pdf_parser.parse_pdf", return_value=MagicMock()),
         ):
             async def fake_fetch(arxiv_id):
                 return b"pdf", {"title": "T", "abstract": "A", "authors": [], "doi": None, "source_url": "u"}
@@ -210,8 +210,8 @@ class TestIngestPaperArxiv:
         with (
             patch("app.db.postgres_client._client", db_mock),
             patch("workers.tasks._fetch_arxiv") as mock_fetch,
-            patch("workers.tasks.upload_pdf"),
-            patch("workers.tasks.parse_pdf"),
+            patch("app.services.storage.upload_pdf"),
+            patch("app.services.pdf_parser.parse_pdf"),
         ):
             async def fail_fetch(arxiv_id):
                 raise ValueError("Network error")
@@ -279,8 +279,8 @@ class TestIngestPaperPdf:
 
         with (
             patch("app.db.postgres_client._client", db_mock),
-            patch("workers.tasks.download_pdf", return_value=pdf_bytes) as mock_download,
-            patch("workers.tasks.parse_pdf", return_value=MagicMock()),
+            patch("app.services.storage.download_pdf", return_value=pdf_bytes) as mock_download,
+            patch("app.services.pdf_parser.parse_pdf", return_value=MagicMock()),
         ):
             ingest_paper.apply(
                 kwargs={
@@ -305,8 +305,8 @@ class TestIngestPaperPdf:
 
         with (
             patch("app.db.postgres_client._client", db_mock),
-            patch("workers.tasks.download_pdf", return_value=b"data") as mock_download,
-            patch("workers.tasks.parse_pdf", return_value=MagicMock()),
+            patch("app.services.storage.download_pdf", return_value=b"data") as mock_download,
+            patch("app.services.pdf_parser.parse_pdf", return_value=MagicMock()),
         ):
             ingest_paper.apply(
                 kwargs={

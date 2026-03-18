@@ -26,15 +26,15 @@ class TestIsSectionHeader:
         long_line = "1. Introduction " + "x" * 70  # well over 80 chars
         assert _is_section_header(long_line) is False
 
-    def test_exactly_80_chars_can_match(self):
-        # "abstract" is 8 chars — pad to 80 with spaces before stripping
-        # _is_section_header strips before checking length, so 80 stripped chars = boundary
-        # Build a line that strips to exactly 80 chars and matches a pattern
-        header = "1. " + "introduction" + " " * (80 - 3 - 12)  # 65 spaces, total stripped = 15 ... rethink
-        # Simplest approach: test that length check uses stripped length
-        line_80 = "1. introduction" + "x" * (80 - 15)  # stripped = 80 chars total
-        # This won't match a pattern because of trailing x chars, so False
+    def test_exactly_80_chars_does_not_match_if_pattern_fails(self):
+        # A line of exactly 80 non-matching chars should return False (length ok, no pattern)
+        line_80 = "x" * 80
         assert _is_section_header(line_80) is False
+
+    def test_81_chars_returns_false_even_if_starts_with_pattern(self):
+        # >80 stripped chars → rejected before pattern check
+        line_81 = "1. introduction " + "x" * (81 - 16)  # stripped = 81 chars
+        assert _is_section_header(line_81) is False
 
     def test_random_sentence_returns_false(self):
         assert _is_section_header("This is a random sentence about things.") is False

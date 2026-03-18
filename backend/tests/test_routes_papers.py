@@ -117,7 +117,7 @@ def _make_pdf_upload(content: bytes = MINIMAL_PDF, content_type: str = "applicat
 class TestIngestFromPdf:
     def test_happy_path_returns_ids(self, client):
         with (
-            patch("app.api.routes.papers.upload_pdf", return_value="pdfs/abc.pdf"),
+            patch("app.services.storage.upload_pdf", return_value="pdfs/abc.pdf"),
             patch("app.api.routes.papers.ingest_paper") as mock_task,
         ):
             mock_task.delay = MagicMock()
@@ -136,7 +136,7 @@ class TestIngestFromPdf:
 
     def test_octet_stream_accepted(self, client):
         with (
-            patch("app.api.routes.papers.upload_pdf", return_value="pdfs/abc.pdf"),
+            patch("app.services.storage.upload_pdf", return_value="pdfs/abc.pdf"),
             patch("app.api.routes.papers.ingest_paper") as mock_task,
         ):
             mock_task.delay = MagicMock()
@@ -160,7 +160,7 @@ class TestIngestFromPdf:
     def test_upload_pdf_called_with_bytes_and_hash(self, client):
         content = b"fake pdf content for hash test"
         with (
-            patch("app.api.routes.papers.upload_pdf", return_value="pdfs/xyz.pdf") as mock_upload,
+            patch("app.services.storage.upload_pdf", return_value="pdfs/xyz.pdf") as mock_upload,
             patch("app.api.routes.papers.ingest_paper") as mock_task,
         ):
             mock_task.delay = MagicMock()
@@ -174,7 +174,7 @@ class TestIngestFromPdf:
 
     def test_celery_task_dispatched_with_pdf_source_type(self, client):
         with (
-            patch("app.api.routes.papers.upload_pdf", return_value="pdfs/abc.pdf"),
+            patch("app.services.storage.upload_pdf", return_value="pdfs/abc.pdf"),
             patch("app.api.routes.papers.ingest_paper") as mock_task,
         ):
             mock_task.delay = MagicMock()
