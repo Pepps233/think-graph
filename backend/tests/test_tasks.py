@@ -1,12 +1,33 @@
 """Unit tests for workers.tasks.ingest_paper and helper functions."""
 
 import hashlib
+from contextlib import ExitStack
 from unittest.mock import MagicMock, call, patch
 
 import pytest
 
 from tests.conftest import make_supabase_mock
 from workers.tasks import _update_job, _update_paper, ingest_paper
+
+
+# Patch targets for Step 4 extraction — all imported lazily inside tasks.py
+_EXTRACTION_PATCHES = [
+    ("app.services.extraction_pipeline.extract_structure", MagicMock()),
+    ("app.services.extraction_pipeline.extract_entities", MagicMock()),
+    ("app.services.extraction_pipeline.extract_relationships", MagicMock()),
+    ("app.services.extraction_pipeline.extract_reasoning_flow", MagicMock()),
+    ("app.services.graph_writer.write_nodes", MagicMock(return_value={})),
+    ("app.services.graph_writer.write_edges", MagicMock()),
+    ("app.services.graph_writer.write_reasoning_nodes", MagicMock()),
+    ("app.services.graph_writer.cache_llm_output", MagicMock()),
+]
+
+
+def _apply_extraction_patches(stack: ExitStack) -> None:
+    """Enter all extraction-related patches into an ExitStack."""
+    for target, default_return in _EXTRACTION_PATCHES:
+        mock = stack.enter_context(patch(target))
+        mock.return_value = default_return.return_value
 
 
 # ---------------------------------------------------------------------------
@@ -85,14 +106,16 @@ class TestIngestPaperArxiv:
                 "doi": "10.1234/x",
                 "source_url": "https://arxiv.org/pdf/2301.00001",
             }
-        with (
-            patch("app.db.postgres_client._client", db_mock),
-            patch("workers.tasks._fetch_arxiv") as mock_fetch,
-            patch("app.services.storage.upload_pdf", return_value="pdfs/hash.pdf") as mock_upload,
-            patch("app.services.pdf_parser.parse_pdf", return_value=MagicMock()) as mock_parse,
-        ):
-            # asyncio.run() wraps the coroutine; mock _fetch_arxiv to return immediately
-            import asyncio
+        with ExitStack() as stack:
+            stack.enter_context(patch("app.db.postgres_client._client", db_mock))
+            mock_fetch = stack.enter_context(patch("workers.tasks._fetch_arxiv"))
+            mock_upload = stack.enter_context(
+                patch("app.services.storage.upload_pdf", return_value="pdfs/hash.pdf")
+            )
+            mock_parse = stack.enter_context(
+                patch("app.services.pdf_parser.parse_pdf", return_value=MagicMock())
+            )
+            _apply_extraction_patches(stack)
 
             async def fake_fetch(arxiv_id):
                 return pdf_bytes, metadata
@@ -115,13 +138,12 @@ class TestIngestPaperArxiv:
 
     def test_final_job_status_completed(self):
         db_mock, _ = make_supabase_mock()
-        with (
-            patch("app.db.postgres_client._client", db_mock),
-            patch("workers.tasks._fetch_arxiv") as mock_fetch,
-            patch("app.services.storage.upload_pdf", return_value="pdfs/hash.pdf"),
-            patch("app.services.pdf_parser.parse_pdf", return_value=MagicMock()),
-        ):
-            import asyncio
+        with ExitStack() as stack:
+            stack.enter_context(patch("app.db.postgres_client._client", db_mock))
+            mock_fetch = stack.enter_context(patch("workers.tasks._fetch_arxiv"))
+            stack.enter_context(patch("app.services.storage.upload_pdf", return_value="pdfs/hash.pdf"))
+            stack.enter_context(patch("app.services.pdf_parser.parse_pdf", return_value=MagicMock()))
+            _apply_extraction_patches(stack)
 
             async def fake_fetch(arxiv_id):
                 return b"pdf", {"title": "T", "abstract": "A", "authors": [], "doi": None, "source_url": "u"}
@@ -151,12 +173,15 @@ class TestIngestPaperArxiv:
         pdf_bytes = b"real-pdf-content"
         db_mock, _ = make_supabase_mock()
 
-        with (
-            patch("app.db.postgres_client._client", db_mock),
-            patch("workers.tasks._fetch_arxiv") as mock_fetch,
-            patch("app.services.storage.upload_pdf", return_value="pdfs/hash.pdf") as mock_upload,
-            patch("app.services.pdf_parser.parse_pdf", return_value=MagicMock()),
-        ):
+        with ExitStack() as stack:
+            stack.enter_context(patch("app.db.postgres_client._client", db_mock))
+            mock_fetch = stack.enter_context(patch("workers.tasks._fetch_arxiv"))
+            mock_upload = stack.enter_context(
+                patch("app.services.storage.upload_pdf", return_value="pdfs/hash.pdf")
+            )
+            stack.enter_context(patch("app.services.pdf_parser.parse_pdf", return_value=MagicMock()))
+            _apply_extraction_patches(stack)
+
             async def fake_fetch(arxiv_id):
                 return pdf_bytes, {"title": "T", "abstract": "A", "authors": [], "doi": None, "source_url": "u"}
 
@@ -176,12 +201,13 @@ class TestIngestPaperArxiv:
     def test_progress_updates_in_order(self):
         db_mock, _ = make_supabase_mock()
 
-        with (
-            patch("app.db.postgres_client._client", db_mock),
-            patch("workers.tasks._fetch_arxiv") as mock_fetch,
-            patch("app.services.storage.upload_pdf", return_value="pdfs/hash.pdf"),
-            patch("app.services.pdf_parser.parse_pdf", return_value=MagicMock()),
-        ):
+        with ExitStack() as stack:
+            stack.enter_context(patch("app.db.postgres_client._client", db_mock))
+            mock_fetch = stack.enter_context(patch("workers.tasks._fetch_arxiv"))
+            stack.enter_context(patch("app.services.storage.upload_pdf", return_value="pdfs/hash.pdf"))
+            stack.enter_context(patch("app.services.pdf_parser.parse_pdf", return_value=MagicMock()))
+            _apply_extraction_patches(stack)
+
             async def fake_fetch(arxiv_id):
                 return b"pdf", {"title": "T", "abstract": "A", "authors": [], "doi": None, "source_url": "u"}
 
@@ -277,11 +303,11 @@ class TestIngestPaperPdf:
         pdf_bytes = b"uploaded-pdf-data"
         db_mock, _ = make_supabase_mock()
 
-        with (
-            patch("app.db.postgres_client._client", db_mock),
-            patch("app.services.storage.download_pdf", return_value=pdf_bytes) as mock_download,
-            patch("app.services.pdf_parser.parse_pdf", return_value=MagicMock()),
-        ):
+        with ExitStack() as stack:
+            stack.enter_context(patch("app.db.postgres_client._client", db_mock))
+            stack.enter_context(patch("app.services.storage.download_pdf", return_value=pdf_bytes))
+            stack.enter_context(patch("app.services.pdf_parser.parse_pdf", return_value=MagicMock()))
+            _apply_extraction_patches(stack)
             ingest_paper.apply(
                 kwargs={
                     "job_id": "job-2",
@@ -303,11 +329,13 @@ class TestIngestPaperPdf:
         r2_key = "pdfs/myhash.pdf"
         db_mock, _ = make_supabase_mock()
 
-        with (
-            patch("app.db.postgres_client._client", db_mock),
-            patch("app.services.storage.download_pdf", return_value=b"data") as mock_download,
-            patch("app.services.pdf_parser.parse_pdf", return_value=MagicMock()),
-        ):
+        with ExitStack() as stack:
+            stack.enter_context(patch("app.db.postgres_client._client", db_mock))
+            mock_download = stack.enter_context(
+                patch("app.services.storage.download_pdf", return_value=b"data")
+            )
+            stack.enter_context(patch("app.services.pdf_parser.parse_pdf", return_value=MagicMock()))
+            _apply_extraction_patches(stack)
             ingest_paper.apply(
                 kwargs={
                     "job_id": "job-2",

@@ -58,12 +58,45 @@ def ingest_paper(self, job_id: str, paper_id: str, source: str, source_type: str
         from app.services.pdf_parser import parse_pdf
         parsed = parse_pdf(pdf_bytes)
 
-        # Step 3: AI extraction (implemented in Step 4)
+        # For PDF path, fetch paper metadata from DB (arXiv path has it in memory)
+        if source_type == "pdf":
+            row = db.table("papers").select("title,abstract,authors").eq("id", paper_id).execute()
+            metadata = row.data[0] if row.data else {}
+
+        # Step 3: AI extraction
+        from app.services.extraction_pipeline import (
+            extract_structure,
+            extract_entities,
+            extract_relationships,
+            extract_reasoning_flow,
+        )
+        from app.services.graph_writer import (
+            cache_llm_output,
+            write_edges,
+            write_nodes,
+            write_reasoning_nodes,
+        )
+
         _update_job(db, job_id, "processing", "Extracting structure", 35)
-        # Placeholder — extraction pipeline wired in Step 4
+        structure = extract_structure(parsed, metadata)
+        cache_llm_output(db, paper_id, "structure", structure.model_dump())
+
         _update_job(db, job_id, "processing", "Extracting entities", 50)
+        entities = extract_entities(parsed, structure)
+        cache_llm_output(db, paper_id, "entities", entities.model_dump())
+
         _update_job(db, job_id, "processing", "Extracting relationships", 70)
+        relationships = extract_relationships(parsed, entities)
+        cache_llm_output(db, paper_id, "relationships", relationships.model_dump())
+
         _update_job(db, job_id, "processing", "Extracting reasoning flow", 85)
+        flow = extract_reasoning_flow(parsed, structure)
+        cache_llm_output(db, paper_id, "reasoning_flow", flow.model_dump())
+
+        # Persist graph to DB
+        node_map = write_nodes(db, paper_id, entities)
+        write_edges(db, paper_id, relationships, node_map)
+        write_reasoning_nodes(db, paper_id, flow, node_map)
 
         # Mark complete
         _update_job(db, job_id, "completed", "Done", 100)
