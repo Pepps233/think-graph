@@ -1,0 +1,26 @@
+# Project config & secrets
+.env
+.env.local
+.env.*.local
+PLAN.md
+STACK.md
+skills-lock.json
+.mcp.json
+.claude/
+
+# Python
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/.pytest_cache/
+backend/*.egg-info/
+
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# OS
+.DS_Store
+Thumbs.db
