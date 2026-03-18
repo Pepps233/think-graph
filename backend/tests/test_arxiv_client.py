@@ -133,7 +133,7 @@ class TestFetchArxivPdf:
         with (
             patch("app.services.arxiv_client.arxiv.Client") as mock_arxiv_client_cls,
             patch("app.services.arxiv_client.httpx.AsyncClient", return_value=mock_http_client),
-        ) as (_, __):
+        ):
             instance = mock_arxiv_client_cls.return_value
             instance.results.return_value = iter([paper])
 
