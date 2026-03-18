@@ -60,6 +60,51 @@ cd backend
 celery -A workers.celery_app worker --loglevel=info
 ```
 
+## Testing
+
+### Backend
+
+Install test dependencies, then run pytest:
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+pytest --tb=short
+```
+
+Run a specific test file:
+
+```bash
+pytest tests/test_pdf_parser.py -v
+pytest tests/test_routes_jobs.py -v -k stream
+```
+
+Generate a coverage report:
+
+```bash
+pytest --cov=app --cov=workers --cov-report=html
+open htmlcov/index.html
+```
+
+### Frontend
+
+```bash
+cd frontend
+npx vitest run
+```
+
+Run in watch mode during development:
+
+```bash
+npx vitest
+```
+
+### CI
+
+Tests run automatically on every push and on pull requests targeting `main` via GitHub Actions (`.github/workflows/ci.yml`). Both the backend (pytest) and frontend (Vitest) jobs must pass before a PR can be merged.
+
+---
+
 ## Environment Variables
 
 Copy `.env.example` and fill in your keys:
