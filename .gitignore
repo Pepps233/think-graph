@@ -7,6 +7,7 @@ STACK.md
 skills-lock.json
 .mcp.json
 .claude/
+CLAUDE.md
 
 # Python
 backend/.venv/
