@@ -1,0 +1,8 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+pythonpath = ["."]
+addopts = "--cov=app --cov=workers --cov-report=term-missing"
+
+[tool.coverage.run]
+omit = ["tests/*"]
