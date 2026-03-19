@@ -34,3 +34,33 @@ def download_pdf(r2_key: str) -> bytes:
     client = get_r2_client()
     response = client.get_object(Bucket=settings.r2_bucket_name, Key=r2_key)
     return response["Body"].read()
+
+
+def upload_image(image_bytes: bytes, paper_sha256: str, page: int, index: int, ext: str) -> str:
+    """
+    Upload an extracted image to R2.
+    Returns the R2 object key.
+    """
+    key = f"images/{paper_sha256}/p{page}_i{index}.{ext}"
+    content_type = f"image/{ext}" if ext != "jpg" else "image/jpeg"
+    client = get_r2_client()
+    client.put_object(
+        Bucket=settings.r2_bucket_name,
+        Key=key,
+        Body=image_bytes,
+        ContentType=content_type,
+    )
+    return key
+
+
+def presign_url(r2_key: str, expires_in: int = 3600) -> str:
+    """
+    Generate a presigned GET URL for an R2 object.
+    Default expiry is 1 hour.
+    """
+    client = get_r2_client()
+    return client.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": settings.r2_bucket_name, "Key": r2_key},
+        ExpiresIn=expires_in,
+    )

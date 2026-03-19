@@ -19,6 +19,7 @@ import '@xyflow/react/dist/style.css';
 import { Sheet } from '@/components/ui/sheet';
 import GraphNode from './GraphNode';
 import NodeDetailPanel from './NodeDetailPanel';
+import { layoutGraph } from './layoutGraph';
 import type { NodeData, NeighborInfo } from './graphTypes';
 import { NODE_COLORS } from './nodeColors';
 
@@ -35,6 +36,9 @@ const nodeTypes: NodeTypes = {
   limitation: GraphNode,
   future_work: GraphNode,
   reasoning: GraphNode,
+  equation: GraphNode,
+  figure: GraphNode,
+  table: GraphNode,
 };
 
 const defaultEdgeOptions = {
@@ -69,7 +73,12 @@ export default function GraphCanvas({ initialNodes, initialEdges }: GraphCanvasP
     [initialEdges]
   );
 
-  const [nodes, , onNodesChange] = useNodesState(initialNodes);
+  const laidOutNodes = useMemo(
+    () => layoutGraph(initialNodes, formattedEdges),
+    [initialNodes, formattedEdges]
+  );
+
+  const [nodes, , onNodesChange] = useNodesState(laidOutNodes);
   const [edges, , onEdgesChange] = useEdgesState(formattedEdges);
   const [selectedNode, setSelectedNode] = useState<(NodeData & { id: string }) | null>(null);
   const [isPanelOpen, setIsPanelOpen] = useState(false);

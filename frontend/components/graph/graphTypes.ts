@@ -9,7 +9,10 @@ export type NodeType =
   | 'citation'
   | 'limitation'
   | 'future_work'
-  | 'reasoning';
+  | 'reasoning'
+  | 'equation'
+  | 'figure'
+  | 'table';
 
 export interface NodeData extends Record<string, unknown> {
   title: string;
@@ -24,6 +27,7 @@ export interface NodeData extends Record<string, unknown> {
   section_number: string | null;
   page_number: number | null;
   label: string | null;
+  image_url: string | null;
 }
 
 export interface NeighborInfo {

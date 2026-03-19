@@ -123,7 +123,7 @@ class TestGetGraph:
         }
         assert expected_keys.issubset(node["data"].keys())
 
-    def test_grid_position_assigned_to_nodes(self):
+    def test_placeholder_position_assigned_to_nodes(self):
         execute_results = [
             MagicMock(data=[{"id": PAPER_ID}]),
             MagicMock(data=[NODE_A, NODE_B]),
@@ -136,8 +136,9 @@ class TestGetGraph:
             response = TestClient(app).get(f"/papers/{PAPER_ID}/graph")
 
         nodes = response.json()["nodes"]
-        assert nodes[0]["position"] == {"x": 0, "y": 0}
-        assert nodes[1]["position"] == {"x": 250, "y": 0}
+        # Backend provides placeholder positions; frontend applies dagre layout
+        for node in nodes:
+            assert "position" in node
 
 
 # ---------------------------------------------------------------------------

@@ -74,4 +74,22 @@ export const NODE_COLORS: Record<NodeType, NodeColorConfig> = {
     dot: '#8b5cf6',
     label: 'Reasoning',
   },
+  equation: {
+    bg: '#fefce8',
+    border: '#fde68a',
+    dot: '#d97706',
+    label: 'Equation',
+  },
+  figure: {
+    bg: '#ecfdf5',
+    border: '#a7f3d0',
+    dot: '#059669',
+    label: 'Figure',
+  },
+  table: {
+    bg: '#f0f9ff',
+    border: '#bae6fd',
+    dot: '#0284c7',
+    label: 'Table',
+  },
 };

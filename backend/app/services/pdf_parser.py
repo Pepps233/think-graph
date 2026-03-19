@@ -1,9 +1,20 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import fitz  # PyMuPDF
+
+
+@dataclass
+class ExtractedImage:
+    """An image extracted from a PDF page."""
+    image_bytes: bytes
+    page_number: int  # 1-indexed
+    image_index: int  # index within the page
+    width: int
+    height: int
+    ext: str  # file extension: png, jpeg, etc.
 
 
 @dataclass
@@ -20,19 +31,46 @@ class ParsedPaper:
     sections: list[Section]
     page_count: int
     page_texts: list[str]
+    images: list[ExtractedImage] = field(default_factory=list)
 
 
 def parse_pdf(pdf_bytes: bytes) -> ParsedPaper:
     """
-    Extract raw text from PDF bytes.
+    Extract raw text and images from PDF bytes.
     Page texts are preserved for later section re-segmentation
     once the LLM identifies the true section boundaries.
     """
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     page_texts: list[str] = []
+    images: list[ExtractedImage] = []
 
-    for page in doc:
+    for page_idx, page in enumerate(doc):
         page_texts.append(page.get_text("text"))
+
+        # Extract images from this page
+        for img_idx, img_info in enumerate(page.get_images(full=True)):
+            xref = img_info[0]
+            base_image = doc.extract_image(xref)
+            if not base_image:
+                continue
+
+            width = base_image.get("width", 0)
+            height = base_image.get("height", 0)
+
+            # Skip tiny images (icons, decorations, line art)
+            if width < 100 or height < 100:
+                continue
+
+            images.append(
+                ExtractedImage(
+                    image_bytes=base_image["image"],
+                    page_number=page_idx + 1,
+                    image_index=img_idx,
+                    width=width,
+                    height=height,
+                    ext=base_image.get("ext", "png"),
+                )
+            )
 
     raw_text = "\n".join(page_texts)
     page_count = len(doc)
@@ -55,6 +93,7 @@ def parse_pdf(pdf_bytes: bytes) -> ParsedPaper:
         sections=sections,
         page_count=page_count,
         page_texts=page_texts,
+        images=images,
     )
 
 

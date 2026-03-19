@@ -2,17 +2,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.db.postgres_client import get_client
+from app.services.storage import presign_url
 
 router = APIRouter(tags=["graph"])
-
-_COLS = 4
-_SPACING_X = 250
-_SPACING_Y = 200
-
-
-def _grid_position(index: int) -> dict:
-    return {"x": (index % _COLS) * _SPACING_X, "y": (index // _COLS) * _SPACING_Y}
-
 
 def _node_to_rf(node: dict, index: int) -> dict:
     return {
@@ -31,8 +23,9 @@ def _node_to_rf(node: dict, index: int) -> dict:
             "section_number": node.get("section_number"),
             "page_number": node.get("page_number"),
             "label": node.get("label"),
+            "image_url": presign_url(node["image_url"]) if node.get("image_url") else None,
         },
-        "position": _grid_position(index),
+        "position": {"x": 0, "y": 0},
     }
 
 

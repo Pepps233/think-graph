@@ -3,6 +3,7 @@ Persist extraction results to Supabase nodes/edges tables
 and cache raw LLM outputs in papers.llm_cache.
 """
 
+import re
 import uuid
 
 from app.models.extraction import (
@@ -13,16 +14,47 @@ from app.models.extraction import (
 )
 
 
-def write_nodes(db, paper_id: str, entities: PaperEntities) -> dict[str, str]:
+def _match_image_url(label: str, image_urls: dict[str, str]) -> str | None:
+    """
+    Match an entity label like 'Figure 1', 'Figure 1: The Transformer',
+    or 'Table 2' against the image_urls keys.
+    Tries exact match first, then extracts the figure/table number
+    and matches against 'Figure N' keys.
+    """
+    # Exact match
+    url = image_urls.get(label)
+    if url:
+        return url
+
+    # Extract number from label (e.g. "Figure 1: The Transformer" -> "1")
+    match = re.search(r"(?:figure|table|fig\.?)\s*(\d+)", label, re.IGNORECASE)
+    if match:
+        number = match.group(1)
+        # Try normalized keys
+        for prefix in ("Figure", "Table"):
+            url = image_urls.get(f"{prefix} {number}")
+            if url:
+                return url
+
+    return None
+
+
+def write_nodes(
+    db,
+    paper_id: str,
+    entities: PaperEntities,
+    image_urls: dict[str, str] | None = None,
+) -> dict[str, str]:
     """
     Insert one node row per entity.
+    image_urls: optional mapping of label (e.g. 'Figure 1') -> public URL.
     Returns {entity_title: node_id} for edge resolution.
     """
     node_map: dict[str, str] = {}
 
     for entity in entities.entities:
         node_id = str(uuid.uuid4())
-        db.table("nodes").insert({
+        row = {
             "id": node_id,
             "paper_id": paper_id,
             "type": entity.type.value,
@@ -37,7 +69,22 @@ def write_nodes(db, paper_id: str, entities: PaperEntities) -> dict[str, str]:
             "section_number": entity.section_number,
             "page_number": entity.page_number,
             "label": entity.label,
-        }).execute()
+        }
+        if entity.latex:
+            row["key_equations"] = [entity.latex]
+        if image_urls and entity.type.value in ("figure", "table"):
+            url = None
+            if entity.label:
+                url = _match_image_url(entity.label, image_urls)
+            # Fall back to page-based matching if label match fails
+            if not url and entity.page_number:
+                for key, candidate_url in image_urls.items():
+                    if key.startswith(f"p{entity.page_number}_"):
+                        url = candidate_url
+                        break
+            if url:
+                row["image_url"] = url
+        db.table("nodes").insert(row).execute()
         node_map[entity.title] = node_id
 
     return node_map

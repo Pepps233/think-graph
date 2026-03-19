@@ -231,26 +231,53 @@ export default function NodeDetailPanel({
           </div>
         )}
 
-        {/* Key equations */}
+        {/* Image for figure/table nodes */}
+        {node.image_url && (
+          <div>
+            <SectionLabel>{node.type === 'table' ? 'Table' : 'Figure'}</SectionLabel>
+            <div
+              style={{
+                borderRadius: 8,
+                border: '1px solid rgba(0,0,0,0.08)',
+                overflow: 'hidden',
+                background: '#ffffff',
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={node.image_url}
+                alt={node.title}
+                style={{
+                  width: '100%',
+                  height: 'auto',
+                  display: 'block',
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Key equations / LaTeX */}
         {node.key_equations && node.key_equations.length > 0 && (
           <div>
-            <SectionLabel>Key Equations</SectionLabel>
+            <SectionLabel>{node.type === 'equation' ? 'Equation' : 'Key Equations'}</SectionLabel>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {node.key_equations.map((eq, i) => (
                 <div
                   key={i}
                   style={{
                     overflowX: 'auto',
-                    background: '#f8f9fb',
-                    border: '1px solid rgba(0,0,0,0.06)',
+                    background: '#fefce8',
+                    border: '1px solid #fde68a',
                     borderRadius: 8,
                     padding: 16,
+                    color: '#1c1917',
                   }}
                 >
                   <BlockMath
                     math={eq}
                     renderError={() => (
-                      <code style={{ color: '#ef4444', fontSize: 13 }}>{eq}</code>
+                      <code style={{ color: '#92400e', fontSize: 13 }}>{eq}</code>
                     )}
                   />
                 </div>
