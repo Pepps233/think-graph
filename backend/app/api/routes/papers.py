@@ -1,11 +1,15 @@
+import asyncio
 import hashlib
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
 from app.db.postgres_client import get_client
 from workers.tasks import ingest_paper
+
+_executor = ThreadPoolExecutor(max_workers=4)
 
 router = APIRouter(prefix="/papers", tags=["papers"])
 
@@ -47,8 +51,12 @@ async def ingest_from_url(body: IngestURLRequest):
         "progress": 0,
     }).execute()
 
-    # Dispatch Celery task
-    ingest_paper.delay(job_id=job_id, paper_id=paper_id, source=arxiv_id, source_type="arxiv")
+    # Dispatch Celery task — fire and forget, don't block the response
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(
+        _executor,
+        lambda: ingest_paper.delay(job_id=job_id, paper_id=paper_id, source=arxiv_id, source_type="arxiv"),
+    )
 
     return IngestResponse(paper_id=paper_id, job_id=job_id)
 
@@ -95,8 +103,12 @@ async def ingest_from_pdf(file: UploadFile = File(...)):
         "progress": 0,
     }).execute()
 
-    # Dispatch Celery task
-    ingest_paper.delay(job_id=job_id, paper_id=paper_id, source=r2_key, source_type="pdf")
+    # Dispatch Celery task — fire and forget, don't block the response
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(
+        _executor,
+        lambda: ingest_paper.delay(job_id=job_id, paper_id=paper_id, source=r2_key, source_type="pdf"),
+    )
 
     return IngestResponse(paper_id=paper_id, job_id=job_id)
 
