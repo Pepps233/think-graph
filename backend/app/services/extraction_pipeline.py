@@ -43,14 +43,11 @@ def extract_structure(parsed: ParsedPaper, metadata: dict) -> PaperStructure:
     authors = metadata.get("authors", [])
     authors_str = ", ".join(authors) if isinstance(authors, list) else str(authors)
 
-    # Send enough text for the model to identify all section headers.
-    # Section headers are short lines spread throughout the paper,
-    # so we need broad coverage rather than deep content.
     user_content = (
         f"Title: {title}\n"
         f"Authors: {authors_str}\n"
         f"Abstract: {abstract}\n\n"
-        f"Full text (first 12000 chars):\n{parsed.raw_text[:12000]}"
+        f"Full text:\n{parsed.raw_text[:30000]}"
     )
 
     return _get_client().chat.completions.create(
@@ -90,7 +87,7 @@ def extract_entities(parsed: ParsedPaper, structure: PaperStructure) -> PaperEnt
     section_blocks = []
     for section in llm_sections:
         header = f"[Section: {section.name} | Pages: {section.page_start}-{section.page_end}]"
-        section_blocks.append(f"{header}\n{section.text[:3000]}")
+        section_blocks.append(f"{header}\n{section.text[:6500]}")
 
     sections_text = "\n\n".join(section_blocks)
 
@@ -109,15 +106,27 @@ def extract_entities(parsed: ParsedPaper, structure: PaperStructure) -> PaperEnt
                     "You are an expert at extracting knowledge graph entities from academic papers. "
                     "For each entity, capture its exact provenance: the section name, section number, "
                     "page number (from the section header), and label if applicable "
-                    "(e.g. 'Equation 6a', 'Figure 3', 'Table 1'). "
+                    "(e.g. 'Equation 1', 'Figure 3', 'Table 1'). "
                     "Extract all significant concepts, methods, architectures, datasets, "
                     "experiments, results, citations, limitations, and future work items. "
-                    "Include the verbatim source_text excerpt for each entity."
+                    "Include the verbatim source_text excerpt for each entity.\n\n"
+                    "EQUATIONS: Each significant equation MUST be its own entity with type='equation'. "
+                    "Set the 'latex' field to the LaTeX representation of the equation. "
+                    "The 'description' should explain the equation in depth: what each variable means, "
+                    "how the equation works, why it matters, and how it connects to the paper's method. "
+                    "The 'simplified_explanation' should explain the equation in plain language. "
+                    "Use the 'label' field for the equation label (e.g. 'Equation 1'). "
+                    "Do NOT put equations in the key_equations array of other entities.\n\n"
+                    "FIGURES AND TABLES: Each figure, table, and graph MUST be its own entity. "
+                    "Use type='figure' for figures/diagrams/graphs and type='table' for tables. "
+                    "The 'description' should thoroughly describe what the figure/table shows, "
+                    "its key takeaways, and how it relates to the paper's argument. "
+                    "Use the 'label' field for the reference label (e.g. 'Figure 1', 'Table 2')."
                 ),
             },
             {"role": "user", "content": user_content},
         ],
-        max_tokens=4096,
+        max_tokens=8192,
     )
 
 
@@ -133,12 +142,13 @@ def extract_relationships(
     Only emits relationships where both source and target are in the entity list.
     """
     entity_list = "\n".join(
-        f"- {e.title} ({e.type.value})" for e in entities.entities
+        f"- {e.title} ({e.type.value}): {e.description[:200]}"
+        for e in entities.entities
     )
 
     user_content = (
         f"Paper entities:\n{entity_list}\n\n"
-        f"Paper text (first 8000 chars):\n{parsed.raw_text[:8000]}"
+        f"Paper text (summary):\n{parsed.raw_text[:20000]}"
     )
 
     return _get_client().chat.completions.create(
@@ -156,7 +166,7 @@ def extract_relationships(
             },
             {"role": "user", "content": user_content},
         ],
-        max_tokens=2048,
+        max_tokens=4096,
     )
 
 
