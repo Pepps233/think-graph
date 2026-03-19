@@ -430,7 +430,7 @@ export default function Home() {
                       fontFamily: "var(--font-mono), ui-monospace, monospace",
                     }}
                   >
-                    Powered by GPT-4o
+                    Powered by Luntraa
                   </span>
                 </div>
 
