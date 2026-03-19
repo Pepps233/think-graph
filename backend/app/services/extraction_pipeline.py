@@ -17,7 +17,7 @@ from app.models.extraction import (
     PaperReasoningFlow,
     PaperStructure,
 )
-from app.services.pdf_parser import ParsedPaper
+from app.services.pdf_parser import ParsedPaper, rebuild_sections_from_structure
 
 _client: instructor.Instructor | None = None
 
@@ -43,11 +43,14 @@ def extract_structure(parsed: ParsedPaper, metadata: dict) -> PaperStructure:
     authors = metadata.get("authors", [])
     authors_str = ", ".join(authors) if isinstance(authors, list) else str(authors)
 
+    # Send enough text for the model to identify all section headers.
+    # Section headers are short lines spread throughout the paper,
+    # so we need broad coverage rather than deep content.
     user_content = (
         f"Title: {title}\n"
         f"Authors: {authors_str}\n"
         f"Abstract: {abstract}\n\n"
-        f"Full text (first 6000 chars):\n{parsed.raw_text[:6000]}"
+        f"Full text (first 12000 chars):\n{parsed.raw_text[:12000]}"
     )
 
     return _get_client().chat.completions.create(
@@ -75,13 +78,18 @@ def extract_structure(parsed: ParsedPaper, metadata: dict) -> PaperStructure:
 def extract_entities(parsed: ParsedPaper, structure: PaperStructure) -> PaperEntities:
     """
     Extract all knowledge graph entities with full provenance metadata.
-    Sections are prepended with their name and page range so the model
-    can ground each entity's provenance accurately.
+    Uses LLM-identified sections from PaperStructure to avoid missing
+    content due to unrecognized section headers.
     """
+    # Rebuild sections using the LLM-identified structure
+    llm_sections = rebuild_sections_from_structure(
+        parsed.page_texts,
+        [s.model_dump() for s in structure.sections],
+    )
+
     section_blocks = []
-    for section in parsed.sections:
+    for section in llm_sections:
         header = f"[Section: {section.name} | Pages: {section.page_start}-{section.page_end}]"
-        # Limit each section to 3000 chars to stay within context limits
         section_blocks.append(f"{header}\n{section.text[:3000]}")
 
     sections_text = "\n\n".join(section_blocks)
