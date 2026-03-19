@@ -53,10 +53,14 @@ def ingest_paper(self, job_id: str, paper_id: str, source: str, source_type: str
             pdf_bytes = download_pdf(source)
             _update_paper(db, paper_id, ingestion_status="processing")
 
-        # Step 2: Parse PDF into sections
+        # Step 2: Parse PDF into sections and extract images
         _update_job(db, job_id, "processing", "Parsing PDF sections", 20)
         from app.services.pdf_parser import parse_pdf
         parsed = parse_pdf(pdf_bytes)
+
+        # Upload extracted images to R2
+        paper_hash = hashlib.sha256(pdf_bytes).hexdigest()
+        image_urls = _upload_images(parsed.images, paper_hash)
 
         # For PDF path, fetch paper metadata from DB (arXiv path has it in memory)
         if source_type == "pdf":
@@ -94,7 +98,7 @@ def ingest_paper(self, job_id: str, paper_id: str, source: str, source_type: str
         cache_llm_output(db, paper_id, "reasoning_flow", flow.model_dump())
 
         # Persist graph to DB
-        node_map = write_nodes(db, paper_id, entities)
+        node_map = write_nodes(db, paper_id, entities, image_urls=image_urls)
         write_edges(db, paper_id, relationships, node_map)
         write_reasoning_nodes(db, paper_id, flow, node_map)
 
@@ -106,6 +110,30 @@ def ingest_paper(self, job_id: str, paper_id: str, source: str, source_type: str
         _update_job(db, job_id, "failed", "Failed", 0, error=str(exc))
         _update_paper(db, paper_id, ingestion_status="failed")
         raise
+
+
+def _upload_images(images, paper_hash: str) -> dict[str, str]:
+    """
+    Upload extracted images to R2 and return a mapping of
+    label (e.g. 'Figure 1') -> R2 object key.
+
+    Since we cannot know which image corresponds to which figure label
+    from the PDF alone, we map by page-order index: 'Figure 1', 'Figure 2', etc.
+    The LLM entity extraction labels figures the same way.
+    """
+    from app.services.storage import upload_image
+
+    keys: dict[str, str] = {}
+    for i, img in enumerate(images):
+        r2_key = upload_image(
+            img.image_bytes, paper_hash, img.page_number, img.image_index, img.ext
+        )
+        # Map by ordinal figure label and by page-based key
+        label = f"Figure {i + 1}"
+        keys[label] = r2_key
+        # Also store by page-index key for flexible matching
+        keys[f"p{img.page_number}_i{img.image_index}"] = r2_key
+    return keys
 
 
 async def _fetch_arxiv(arxiv_id: str):
