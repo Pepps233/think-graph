@@ -119,3 +119,28 @@ R2_SECRET_ACCESS_KEY
 R2_S3_ENDPOINT
 CELERY_BROKER_URL
 ```
+
+## 1. Start the FastAPI server
+
+```
+cd backend
+source .venv313/bin/activate
+uvicorn app.main:app --reload --port 8000
+```
+
+## 2. Start the Celery worker (separate terminal)
+
+```
+cd backend
+source .venv313/bin/activate
+celery -A workers.celery_app worker --loglevel=info
+```
+
+## 3. Start the frontend (separate terminal)
+
+```
+cd frontend
+npm run dev
+```
+
+Then open http://localhost:3000.
