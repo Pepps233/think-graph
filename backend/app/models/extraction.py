@@ -17,6 +17,9 @@ class NodeType(str, Enum):
     limitation = "limitation"
     future_work = "future_work"
     reasoning = "reasoning"
+    equation = "equation"
+    figure = "figure"
+    table = "table"
 
 
 class RelationshipType(str, Enum):
@@ -48,6 +51,10 @@ class Entity(BaseModel):
         default_factory=list,
         description="LaTeX strings of key equations related to this entity",
     )
+    latex: Optional[str] = Field(
+        default=None,
+        description="LaTeX representation of this equation (only for equation-type nodes)",
+    )
     source_text: Optional[str] = Field(
         default=None, description="Verbatim excerpt from the paper"
     )
@@ -62,7 +69,7 @@ class Entity(BaseModel):
     )
     label: Optional[str] = Field(
         default=None,
-        description="Label as it appears in the paper, e.g. 'Equation 6a', 'Figure 3'",
+        description="Label as it appears in the paper, e.g. 'Equation 6a', 'Figure 3', 'Table 1'",
     )
 
 
