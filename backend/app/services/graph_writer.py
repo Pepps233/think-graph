@@ -114,39 +114,24 @@ def write_edges(
         }).execute()
 
 
-def write_reasoning_nodes(
+def write_reasoning_edges(
     db,
     paper_id: str,
     flow: PaperReasoningFlow,
     node_map: dict[str, str],
 ) -> None:
     """
-    Insert reasoning-type nodes for each step in the flow and chain them
-    with LEADS_TO edges in sequence.
+    Chain existing entity nodes with LEADS_TO edges following
+    the paper's reasoning flow. No new nodes are created.
     """
     prev_id: str | None = None
 
     for step in flow.steps:
-        node_id = str(uuid.uuid4())
-        db.table("nodes").insert({
-            "id": node_id,
-            "paper_id": paper_id,
-            "type": NodeType.reasoning.value,
-            "title": step.title,
-            "description": step.description,
-            "section_name": step.section_name,
-            "page_number": step.page_number,
-            "simplified_explanation": None,
-            "advantages": [],
-            "limitations": [],
-            "key_equations": [],
-            "source_text": None,
-            "section_number": None,
-            "label": None,
-        }).execute()
-        node_map[step.title] = node_id
+        node_id = node_map.get(step.entity_title)
+        if not node_id:
+            continue
 
-        if prev_id:
+        if prev_id and prev_id != node_id:
             db.table("edges").insert({
                 "id": str(uuid.uuid4()),
                 "paper_id": paper_id,

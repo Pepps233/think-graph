@@ -205,10 +205,10 @@ def extract_reasoning_flow(
                 "role": "system",
                 "content": (
                     "You are an expert at mapping the logical argument structure of academic papers. "
-                    "Extract the ordered reasoning chain from problem identification through to "
-                    "conclusions: Problem → Limitations of Prior Work → Proposed Method → "
-                    "Experiments → Results → Conclusion. "
-                    "Each step should reference the section it comes from."
+                    "Build an ordered chain of entity titles that traces the paper's argument. "
+                    "Each step MUST reference an existing entity title. "
+                    "Cover: problem -> prior limitations -> method -> key equations -> "
+                    "experiments -> results -> conclusion."
                 ),
             },
             {"role": "user", "content": user_content},
@@ -255,9 +255,11 @@ def extract_relationships_and_reasoning(
                     "TASK 1 - RELATIONSHIPS: Identify directed relationships between the provided entities. "
                     "Only emit relationships where both the source and target entity titles exactly match "
                     "entries in the entity list. Use the most specific relationship type available.\n\n"
-                    "TASK 2 - REASONING FLOW: Extract the ordered reasoning chain from problem identification "
-                    "through to conclusions: Problem -> Limitations of Prior Work -> Proposed Method -> "
-                    "Experiments -> Results -> Conclusion. Each step should reference the section it comes from."
+                    "TASK 2 - REASONING FLOW: Build an ordered chain of entity_title values from the entity list "
+                    "that traces the paper's argument. Each reasoning step MUST use an exact entity title from "
+                    "the list above. Include 8-15 steps covering: problem -> prior limitations -> proposed method -> "
+                    "key equations/architecture -> experiments -> datasets -> results -> conclusion. "
+                    "Do NOT invent new titles -- only reference entities that exist in the list."
                 ),
             },
             {"role": "user", "content": user_content},

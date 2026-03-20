@@ -79,7 +79,7 @@ def ingest_paper(self, job_id: str, paper_id: str, source: str, source_type: str
             cache_llm_output,
             write_edges,
             write_nodes,
-            write_reasoning_nodes,
+            write_reasoning_edges,
         )
 
         # Step 3a: Extract structure (PDF-native first, LLM fallback)
@@ -105,7 +105,7 @@ def ingest_paper(self, job_id: str, paper_id: str, source: str, source_type: str
         # Persist graph to DB
         node_map = write_nodes(db, paper_id, entities, image_urls=image_urls)
         write_edges(db, paper_id, relationships, node_map)
-        write_reasoning_nodes(db, paper_id, flow, node_map)
+        write_reasoning_edges(db, paper_id, flow, node_map)
 
         # Mark complete
         _update_job(db, job_id, "completed", "Done", 100)

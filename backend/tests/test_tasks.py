@@ -18,7 +18,7 @@ _EXTRACTION_PATCHES = [
     ("app.services.extraction_pipeline.extract_relationships_and_reasoning", MagicMock()),
     ("app.services.graph_writer.write_nodes", MagicMock(return_value={})),
     ("app.services.graph_writer.write_edges", MagicMock()),
-    ("app.services.graph_writer.write_reasoning_nodes", MagicMock()),
+    ("app.services.graph_writer.write_reasoning_edges", MagicMock()),
     ("app.services.graph_writer.cache_llm_output", MagicMock()),
 ]
 
@@ -373,7 +373,7 @@ class TestPdfStructureFallback:
             stack.enter_context(patch("app.services.extraction_pipeline.extract_relationships_and_reasoning", return_value=MagicMock()))
             stack.enter_context(patch("app.services.graph_writer.write_nodes", return_value={}))
             stack.enter_context(patch("app.services.graph_writer.write_edges"))
-            stack.enter_context(patch("app.services.graph_writer.write_reasoning_nodes"))
+            stack.enter_context(patch("app.services.graph_writer.write_reasoning_edges"))
             stack.enter_context(patch("app.services.graph_writer.cache_llm_output"))
 
             async def fake_fetch(arxiv_id):
@@ -433,10 +433,7 @@ class TestPaperRelationshipsAndReasoningModel:
             ],
             reasoning_steps=[
                 ReasoningStep(
-                    title="Problem",
-                    description="The core problem",
-                    section_name="1 Introduction",
-                    page_number=1,
+                    entity_title="Method A",
                 )
             ],
         )
@@ -447,7 +444,7 @@ class TestPaperRelationshipsAndReasoningModel:
         assert len(rels.relationships) == 1
         assert rels.relationships[0].source_title == "Method A"
         assert len(flow.steps) == 1
-        assert flow.steps[0].title == "Problem"
+        assert flow.steps[0].entity_title == "Method A"
 
     def test_empty_instantiation(self):
         from app.models.extraction import PaperRelationshipsAndReasoning

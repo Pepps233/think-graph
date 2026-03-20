@@ -102,16 +102,17 @@ class PaperRelationships(BaseModel):
 
 
 class ReasoningStep(BaseModel):
-    title: str
-    description: str
-    section_name: Optional[str] = None
-    page_number: Optional[int] = None
+    entity_title: str = Field(
+        description="Title of an existing entity from the entity list that represents this reasoning step"
+    )
 
 
 class PaperReasoningFlow(BaseModel):
     steps: list[ReasoningStep] = Field(
         default_factory=list,
-        description="Ordered reasoning steps: problem → prior limitations → method → experiments → results → conclusion",
+        description="Ordered chain of existing entity titles tracing the paper's argument: "
+        "problem -> prior limitations -> method -> key equations -> experiments -> results -> conclusion. "
+        "Each step MUST reference an entity title from the entity list.",
     )
 
 
@@ -119,5 +120,7 @@ class PaperRelationshipsAndReasoning(BaseModel):
     relationships: list[Relationship] = Field(default_factory=list)
     reasoning_steps: list[ReasoningStep] = Field(
         default_factory=list,
-        description="Ordered reasoning steps: problem -> prior limitations -> method -> experiments -> results -> conclusion",
+        description="Ordered chain of existing entity titles tracing the paper's argument: "
+        "problem -> prior limitations -> method -> key equations -> experiments -> results -> conclusion. "
+        "Each step MUST reference an entity title from the entity list.",
     )
