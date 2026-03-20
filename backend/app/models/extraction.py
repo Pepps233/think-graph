@@ -113,3 +113,11 @@ class PaperReasoningFlow(BaseModel):
         default_factory=list,
         description="Ordered reasoning steps: problem → prior limitations → method → experiments → results → conclusion",
     )
+
+
+class PaperRelationshipsAndReasoning(BaseModel):
+    relationships: list[Relationship] = Field(default_factory=list)
+    reasoning_steps: list[ReasoningStep] = Field(
+        default_factory=list,
+        description="Ordered reasoning steps: problem -> prior limitations -> method -> experiments -> results -> conclusion",
+    )
