@@ -1,13 +1,16 @@
-"""Unit tests for app.services.pdf_parser — no network, real fitz."""
+"""Unit tests for app.services.pdf_parser -- no network, real fitz."""
 
 import pytest
 
+from app.models.extraction import PaperStructure
 from app.services.pdf_parser import (
     ParsedPaper,
     Section,
+    extract_structure_from_pdf,
     parse_pdf,
     rebuild_sections_from_structure,
 )
+from tests.conftest import _make_pdf_with_headers
 
 
 # ---------------------------------------------------------------------------
@@ -127,3 +130,115 @@ class TestRebuildSectionsFromStructure:
         assert sections[0].name == "3 Model Architecture"
         assert sections[1].name == "3.1 Encoder"
         assert sections[2].name == "3.2 Decoder"
+
+
+# ---------------------------------------------------------------------------
+# extract_structure_from_pdf
+# ---------------------------------------------------------------------------
+
+_METADATA = {"title": "Test Paper", "abstract": "An abstract.", "authors": ["A. Author"]}
+
+
+class TestExtractStructureFromPdf:
+    def test_font_heuristic_finds_numbered_sections(self):
+        pdf_bytes = _make_pdf_with_headers([
+            "1 Introduction",
+            "2 Methods",
+            "3 Results",
+            "4 Conclusion",
+        ])
+        result = extract_structure_from_pdf(pdf_bytes, _METADATA)
+        assert result is not None
+        assert isinstance(result, PaperStructure)
+        assert len(result.sections) >= 4
+        names = [s.section_name for s in result.sections]
+        assert "Introduction" in names
+        assert "Methods" in names
+
+    def test_font_heuristic_skips_long_lines(self):
+        long_line = "A " * 80  # 160 chars
+        pdf_bytes = _make_pdf_with_headers([
+            "1 Introduction",
+            "2 Methods",
+            "3 Results",
+            "4 Conclusion",
+            long_line,
+        ])
+        result = extract_structure_from_pdf(pdf_bytes, _METADATA)
+        assert result is not None
+        names = [s.section_name for s in result.sections]
+        assert long_line.strip() not in names
+
+    def test_requires_section_number_prefix(self):
+        pdf_bytes = _make_pdf_with_headers([
+            "Some Random Header",
+            "Another Header",
+            "Yet Another",
+            "Final One",
+        ])
+        result = extract_structure_from_pdf(pdf_bytes, _METADATA)
+        # These have no section numbers and are not known unnumbered headers
+        assert result is None
+
+    def test_returns_none_fewer_than_4_sections(self):
+        pdf_bytes = _make_pdf_with_headers([
+            "1 Introduction",
+            "2 Methods",
+        ])
+        result = extract_structure_from_pdf(pdf_bytes, _METADATA)
+        assert result is None
+
+    def test_toc_extraction(self):
+        import io
+        import fitz
+
+        doc = fitz.open()
+        for _ in range(5):
+            page = doc.new_page()
+            page.insert_text((72, 72), "Body text content here.", fontsize=10)
+
+        toc = [
+            [1, "1 Introduction", 1],
+            [1, "2 Related Work", 2],
+            [1, "3 Methods", 3],
+            [1, "4 Results", 4],
+            [1, "5 Conclusion", 5],
+        ]
+        doc.set_toc(toc)
+        buf = io.BytesIO()
+        doc.save(buf)
+        doc.close()
+        pdf_bytes = buf.getvalue()
+
+        result = extract_structure_from_pdf(pdf_bytes, _METADATA)
+        assert result is not None
+        assert len(result.sections) == 5
+        assert result.sections[0].section_name == "Introduction"
+        assert result.sections[0].section_number == "1"
+
+    def test_known_unnumbered_headers(self):
+        pdf_bytes = _make_pdf_with_headers([
+            "Abstract",
+            "1 Introduction",
+            "2 Methods",
+            "References",
+            "Acknowledgments",
+        ])
+        result = extract_structure_from_pdf(pdf_bytes, _METADATA)
+        assert result is not None
+        names = [s.section_name for s in result.sections]
+        assert "Abstract" in names
+        assert "References" in names
+
+    def test_metadata_propagated_to_structure(self):
+        pdf_bytes = _make_pdf_with_headers([
+            "1 Introduction",
+            "2 Methods",
+            "3 Results",
+            "4 Conclusion",
+        ])
+        result = extract_structure_from_pdf(pdf_bytes, _METADATA)
+        assert result is not None
+        assert result.title == "Test Paper"
+        assert result.abstract == "An abstract."
+        assert result.authors == ["A. Author"]

@@ -98,3 +98,31 @@ def celery_eager():
         task_always_eager=True,
         task_eager_propagates=True,
     )
+
+
+def _make_pdf_with_headers(
+    headers: list[str],
+    body_text: str = "Lorem ipsum dolor sit amet. " * 20,
+    header_fontsize: float = 14,
+    body_fontsize: float = 10,
+) -> bytes:
+    """
+    Create a PDF with distinct header and body font sizes.
+    Each header gets its own line followed by body text on the same page.
+    """
+    doc = fitz.open()
+    page = doc.new_page()
+    y = 72
+    for header in headers:
+        page.insert_text((72, y), header, fontsize=header_fontsize)
+        y += header_fontsize + 4
+        page.insert_text((72, y), body_text, fontsize=body_fontsize)
+        y += body_fontsize * 3 + 20
+        # Start a new page if running low on space
+        if y > 700:
+            page = doc.new_page()
+            y = 72
+    buf = io.BytesIO()
+    doc.save(buf)
+    doc.close()
+    return buf.getvalue()

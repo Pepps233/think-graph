@@ -10,12 +10,12 @@ from tests.conftest import make_supabase_mock
 from workers.tasks import _update_job, _update_paper, ingest_paper
 
 
-# Patch targets for Step 4 extraction — all imported lazily inside tasks.py
+# Patch targets for extraction -- all imported lazily inside tasks.py
 _EXTRACTION_PATCHES = [
+    ("app.services.pdf_parser.extract_structure_from_pdf", MagicMock(return_value=None)),
     ("app.services.extraction_pipeline.extract_structure", MagicMock()),
     ("app.services.extraction_pipeline.extract_entities", MagicMock()),
-    ("app.services.extraction_pipeline.extract_relationships", MagicMock()),
-    ("app.services.extraction_pipeline.extract_reasoning_flow", MagicMock()),
+    ("app.services.extraction_pipeline.extract_relationships_and_reasoning", MagicMock()),
     ("app.services.graph_writer.write_nodes", MagicMock(return_value={})),
     ("app.services.graph_writer.write_edges", MagicMock()),
     ("app.services.graph_writer.write_reasoning_nodes", MagicMock()),
@@ -227,7 +227,7 @@ class TestIngestPaperArxiv:
             for c in query_builder.update.call_args_list
             if "progress" in c.args[0]
         ]
-        expected = [5, 20, 35, 50, 70, 85, 100]
+        expected = [5, 20, 35, 55, 80, 100]
         assert progress_values == expected
 
     def test_exception_marks_job_failed(self):
@@ -346,3 +346,112 @@ class TestIngestPaperPdf:
             )
 
         mock_download.assert_called_once_with(r2_key)
+
+
+# ---------------------------------------------------------------------------
+# PDF structure fallback logic
+# ---------------------------------------------------------------------------
+
+class TestPdfStructureFallback:
+    def _run_with_pdf_structure(self, pdf_structure_return):
+        """Run ingestion with a controlled extract_structure_from_pdf return value."""
+        db_mock, _ = make_supabase_mock()
+
+        with ExitStack() as stack:
+            stack.enter_context(patch("app.db.postgres_client._client", db_mock))
+            mock_fetch = stack.enter_context(patch("workers.tasks._fetch_arxiv"))
+            stack.enter_context(patch("app.services.storage.upload_pdf", return_value="pdfs/hash.pdf"))
+            stack.enter_context(patch("app.services.pdf_parser.parse_pdf", return_value=MagicMock()))
+
+            mock_pdf_struct = stack.enter_context(
+                patch("app.services.pdf_parser.extract_structure_from_pdf", return_value=pdf_structure_return)
+            )
+            mock_llm_struct = stack.enter_context(
+                patch("app.services.extraction_pipeline.extract_structure", return_value=MagicMock())
+            )
+            stack.enter_context(patch("app.services.extraction_pipeline.extract_entities", return_value=MagicMock()))
+            stack.enter_context(patch("app.services.extraction_pipeline.extract_relationships_and_reasoning", return_value=MagicMock()))
+            stack.enter_context(patch("app.services.graph_writer.write_nodes", return_value={}))
+            stack.enter_context(patch("app.services.graph_writer.write_edges"))
+            stack.enter_context(patch("app.services.graph_writer.write_reasoning_nodes"))
+            stack.enter_context(patch("app.services.graph_writer.cache_llm_output"))
+
+            async def fake_fetch(arxiv_id):
+                return b"pdf", {"title": "T", "abstract": "A", "authors": [], "doi": None, "source_url": "u"}
+
+            mock_fetch.side_effect = fake_fetch
+            ingest_paper.apply(
+                kwargs={
+                    "job_id": "job-1",
+                    "paper_id": "paper-1",
+                    "source": "2301.00001",
+                    "source_type": "arxiv",
+                }
+            )
+
+        return mock_pdf_struct, mock_llm_struct
+
+    def test_pdf_structure_none_falls_back_to_llm(self):
+        _, mock_llm = self._run_with_pdf_structure(None)
+        mock_llm.assert_called_once()
+
+    def test_pdf_structure_success_skips_llm(self):
+        from app.models.extraction import PaperStructure, SectionInfo
+        fake_structure = PaperStructure(
+            title="T", abstract="A", authors=[],
+            sections=[
+                SectionInfo(section_number="1", section_name="Intro", page_start=1),
+                SectionInfo(section_number="2", section_name="Methods", page_start=2),
+            ]
+        )
+        _, mock_llm = self._run_with_pdf_structure(fake_structure)
+        mock_llm.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# PaperRelationshipsAndReasoning model
+# ---------------------------------------------------------------------------
+
+class TestPaperRelationshipsAndReasoningModel:
+    def test_instantiation_and_split(self):
+        from app.models.extraction import (
+            PaperRelationshipsAndReasoning,
+            PaperRelationships,
+            PaperReasoningFlow,
+            Relationship,
+            RelationshipType,
+            ReasoningStep,
+        )
+
+        combined = PaperRelationshipsAndReasoning(
+            relationships=[
+                Relationship(
+                    source_title="Method A",
+                    target_title="Result B",
+                    relationship_type=RelationshipType.PRODUCES_RESULT,
+                )
+            ],
+            reasoning_steps=[
+                ReasoningStep(
+                    title="Problem",
+                    description="The core problem",
+                    section_name="1 Introduction",
+                    page_number=1,
+                )
+            ],
+        )
+
+        rels = PaperRelationships(relationships=combined.relationships)
+        flow = PaperReasoningFlow(steps=combined.reasoning_steps)
+
+        assert len(rels.relationships) == 1
+        assert rels.relationships[0].source_title == "Method A"
+        assert len(flow.steps) == 1
+        assert flow.steps[0].title == "Problem"
+
+    def test_empty_instantiation(self):
+        from app.models.extraction import PaperRelationshipsAndReasoning
+
+        combined = PaperRelationshipsAndReasoning()
+        assert combined.relationships == []
+        assert combined.reasoning_steps == []
