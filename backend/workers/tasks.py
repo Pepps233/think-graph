@@ -82,7 +82,7 @@ def ingest_paper(self, job_id: str, paper_id: str, source: str, source_type: str
         )
 
         _update_job(db, job_id, "processing", "Extracting structure", 35)
-        structure = extract_structure(parsed, metadata)
+        structure = extract_structure(parsed, metadata, pdf_bytes=pdf_bytes)
         cache_llm_output(db, paper_id, "structure", structure.model_dump())
 
         _update_job(db, job_id, "processing", "Extracting entities", 50)

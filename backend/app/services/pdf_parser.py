@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 
 import fitz  # PyMuPDF
+
+from app.models.extraction import PaperStructure, SectionInfo
 
 
 @dataclass
@@ -95,6 +98,184 @@ def parse_pdf(pdf_bytes: bytes) -> ParsedPaper:
         page_texts=page_texts,
         images=images,
     )
+
+
+def extract_structure_from_fonts(
+    pdf_bytes: bytes, metadata: dict
+) -> PaperStructure | None:
+    """
+    Try to extract paper structure without an LLM call.
+
+    Strategy:
+    1. Use PDF bookmarks (get_toc) if available.
+    2. Otherwise, detect section headers via font-size heuristics.
+
+    Returns PaperStructure if successful, None to signal LLM fallback.
+    """
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    total_pages = len(doc)
+
+    title = metadata.get("title", "")
+    abstract = metadata.get("abstract", "")
+    authors = metadata.get("authors", [])
+    if isinstance(authors, str):
+        authors = [a.strip() for a in authors.split(",")]
+
+    # --- Strategy 1: PDF bookmarks / TOC ---
+    toc = doc.get_toc()  # [[level, title, page], ...]
+    if toc:
+        sections = _sections_from_toc(toc, total_pages)
+        if len(sections) >= 3:
+            doc.close()
+            return PaperStructure(
+                title=title,
+                abstract=abstract,
+                authors=authors,
+                sections=sections,
+            )
+
+    # --- Strategy 2: Font-size heuristics ---
+    sections = _sections_from_font_sizes(doc)
+    doc.close()
+
+    if len(sections) >= 3:
+        return PaperStructure(
+            title=title,
+            abstract=abstract,
+            authors=authors,
+            sections=sections,
+        )
+
+    return None  # Not enough structure found — fall back to LLM
+
+
+# -- Section number pattern: "1", "1.", "1.2", "A", "A.1", "IV", etc. --
+_SECTION_NUM_RE = re.compile(
+    r"^([A-Z](?:\.\d+)?|\d+(?:\.\d+)*\.?|[IVXLC]+\.?)\s+"
+)
+
+
+def _sections_from_toc(
+    toc: list[list], total_pages: int
+) -> list[SectionInfo]:
+    """Convert PyMuPDF TOC entries into SectionInfo list."""
+    sections: list[SectionInfo] = []
+    for i, entry in enumerate(toc):
+        level, raw_title, page = entry[0], entry[1], entry[2]
+        if level > 2:
+            continue  # skip sub-subsections
+
+        raw_title = raw_title.strip()
+        if not raw_title:
+            continue
+
+        m = _SECTION_NUM_RE.match(raw_title)
+        if m:
+            section_number = m.group(1).rstrip(".")
+            section_name = raw_title[m.end():].strip()
+        else:
+            section_number = ""
+            section_name = raw_title
+
+        # page_end: next section's page or last page
+        page_end = total_pages
+        for j in range(i + 1, len(toc)):
+            if toc[j][0] <= level:
+                page_end = toc[j][2]
+                break
+
+        sections.append(
+            SectionInfo(
+                section_number=section_number,
+                section_name=section_name,
+                page_start=max(1, page),
+                page_end=min(page_end, total_pages),
+            )
+        )
+
+    return sections
+
+
+def _sections_from_font_sizes(doc: fitz.Document) -> list[SectionInfo]:
+    """
+    Detect section headers by finding text spans whose font size is larger
+    than the body text.  Works for most single/double-column papers.
+    """
+    # First pass: collect font sizes across all pages to find body size
+    size_counts: Counter[float] = Counter()
+    for page in doc:
+        blocks = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)["blocks"]
+        for block in blocks:
+            for line in block.get("lines", []):
+                for span in line.get("spans", []):
+                    text = span["text"].strip()
+                    if len(text) > 3:  # skip tiny fragments
+                        size_counts[round(span["size"], 1)] += len(text)
+
+    if not size_counts:
+        return []
+
+    body_size = size_counts.most_common(1)[0][0]
+
+    # Second pass: find lines with font size > body that look like headers
+    candidates: list[tuple[str, int]] = []  # (header_text, page_number)
+    for page_idx, page in enumerate(doc):
+        blocks = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)["blocks"]
+        for block in blocks:
+            for line in block.get("lines", []):
+                spans = line.get("spans", [])
+                if not spans:
+                    continue
+
+                line_text = "".join(s["text"] for s in spans).strip()
+                if not line_text or len(line_text) > 120:
+                    continue  # skip empty or too-long lines
+
+                max_span_size = max(s["size"] for s in spans)
+                if max_span_size <= body_size:
+                    continue
+
+                # Check if it looks like a section header
+                is_bold = any(
+                    "bold" in s.get("font", "").lower() for s in spans
+                )
+                has_number = _SECTION_NUM_RE.match(line_text) is not None
+
+                if has_number or (is_bold and max_span_size >= body_size + 1.5):
+                    candidates.append((line_text, page_idx + 1))
+
+    # Filter out the title (usually largest font on page 1) and junk
+    if not candidates:
+        return []
+
+    sections: list[SectionInfo] = []
+    for i, (raw_header, page_num) in enumerate(candidates):
+        m = _SECTION_NUM_RE.match(raw_header)
+        if m:
+            section_number = m.group(1).rstrip(".")
+            section_name = raw_header[m.end():].strip()
+        else:
+            section_number = ""
+            section_name = raw_header
+
+        # Skip likely title/author lines on first page
+        if page_num == 1 and not section_number and i < 2:
+            continue
+
+        page_end = (
+            candidates[i + 1][1] if i + 1 < len(candidates) else len(doc)
+        )
+
+        sections.append(
+            SectionInfo(
+                section_number=section_number,
+                section_name=section_name,
+                page_start=page_num,
+                page_end=page_end,
+            )
+        )
+
+    return sections
 
 
 def rebuild_sections_from_structure(

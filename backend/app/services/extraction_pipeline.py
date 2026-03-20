@@ -17,7 +17,11 @@ from app.models.extraction import (
     PaperReasoningFlow,
     PaperStructure,
 )
-from app.services.pdf_parser import ParsedPaper, rebuild_sections_from_structure
+from app.services.pdf_parser import (
+    ParsedPaper,
+    extract_structure_from_fonts,
+    rebuild_sections_from_structure,
+)
 
 _client: instructor.Instructor | None = None
 
@@ -33,11 +37,22 @@ def _get_client() -> instructor.Instructor:
 # Pass 1: Paper Structure
 # ---------------------------------------------------------------------------
 
-def extract_structure(parsed: ParsedPaper, metadata: dict) -> PaperStructure:
+def extract_structure(
+    parsed: ParsedPaper, metadata: dict, pdf_bytes: bytes | None = None
+) -> PaperStructure:
     """
     Extract/confirm the paper's section structure.
-    Uses arXiv metadata as ground truth for title/abstract/authors.
+
+    Optimization C: tries PDF bookmarks / font-size heuristics first.
+    Falls back to LLM only when the heuristic returns None.
     """
+    # --- Try zero-cost extraction first ---
+    if pdf_bytes is not None:
+        result = extract_structure_from_fonts(pdf_bytes, metadata)
+        if result is not None:
+            return result
+
+    # --- LLM fallback ---
     title = metadata.get("title", "")
     abstract = metadata.get("abstract", "")
     authors = metadata.get("authors", [])
