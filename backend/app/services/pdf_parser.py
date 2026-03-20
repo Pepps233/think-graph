@@ -233,7 +233,7 @@ def _extract_toc_sections(doc: fitz.Document) -> list[SectionInfo] | None:
 
     sections: list[SectionInfo] = []
     for level, title, page_number in toc:
-        if level > 2:
+        if level > 3:
             continue
         title = title.strip()
         if not title:

@@ -2,16 +2,40 @@ import type { Edge, Node } from '@xyflow/react';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/api';
 import GraphCanvas from '@/components/graph/GraphCanvas';
+import SectionsBar from '@/components/graph/SectionsBar';
 import type { NodeData } from '@/components/graph/graphTypes';
 
 interface GraphPageProps {
   params: { id: string };
 }
 
+interface SectionInfo {
+  section_number: string;
+  section_name: string;
+  page_start: number;
+  page_end?: number | null;
+}
+
+interface PaperData {
+  id: string;
+  title?: string;
+  llm_cache?: {
+    structure?: {
+      title?: string;
+      sections?: SectionInfo[];
+    };
+  };
+}
+
 export default async function GraphPage({ params }: GraphPageProps) {
-  const data = await apiFetch<{ nodes: Node<NodeData>[]; edges: Edge[] }>(
-    `/papers/${params.id}/graph`
-  );
+  const [data, paper] = await Promise.all([
+    apiFetch<{ nodes: Node<NodeData>[]; edges: Edge[] }>(
+      `/papers/${params.id}/graph`
+    ),
+    apiFetch<PaperData>(`/papers/${params.id}`),
+  ]);
+
+  const sections = paper.llm_cache?.structure?.sections ?? [];
 
   return (
     <div
@@ -96,7 +120,7 @@ export default async function GraphPage({ params }: GraphPageProps) {
             whiteSpace: 'nowrap',
           }}
         >
-          {params.id}
+          {paper.title ?? params.id}
         </span>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -111,6 +135,9 @@ export default async function GraphPage({ params }: GraphPageProps) {
           </span>
         </div>
       </header>
+
+      {/* Parsed sections */}
+      {sections.length > 0 && <SectionsBar sections={sections} />}
 
       {/* Canvas */}
       <div style={{ flex: 1, position: 'relative' }}>

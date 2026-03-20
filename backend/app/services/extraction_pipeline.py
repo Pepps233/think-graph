@@ -58,8 +58,9 @@ def extract_structure(parsed: ParsedPaper, metadata: dict) -> PaperStructure:
                 "role": "system",
                 "content": (
                     "You are an expert at analyzing academic research papers. "
-                    "Extract the paper's structure accurately, including all section "
-                    "numbers, section names, and the page ranges they span."
+                    "Extract the paper's structure accurately, including all sections, "
+                    "subsections, and sub-subsections (e.g. 3, 3.2, 3.2.1). "
+                    "Include section numbers, section names, and the page ranges they span."
                 ),
             },
             {"role": "user", "content": user_content},
