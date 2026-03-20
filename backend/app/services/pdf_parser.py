@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 
 import fitz  # PyMuPDF
+
+from app.models.extraction import PaperStructure, SectionInfo
 
 
 @dataclass
@@ -206,3 +209,154 @@ def _fuzzy_header_match(line: str, header_lower: str) -> bool:
     normalized_line = re.sub(r"\s+", " ", stripped)
     normalized_header = re.sub(r"\s+", " ", header_lower)
     return normalized_line == normalized_header or normalized_line.startswith(normalized_header)
+
+
+# ---------------------------------------------------------------------------
+# PDF-native structure extraction (avoids LLM Pass 1 when possible)
+# ---------------------------------------------------------------------------
+
+_SECTION_NUMBER_RE = re.compile(
+    r"^([A-Z]?\d+(?:\.\d+)*\.?|[IVXLC]+\.?|[A-Z]\.)\s+"
+)
+_KNOWN_UNNUMBERED = {
+    "abstract", "references", "acknowledgments", "acknowledgements",
+    "appendix", "conclusion", "conclusions",
+}
+_BOLD_FLAG = 1 << 4  # fitz span flag for bold
+
+
+def _extract_toc_sections(doc: fitz.Document) -> list[SectionInfo] | None:
+    """Extract sections from the PDF's table of contents metadata."""
+    toc = doc.get_toc()
+    if not toc:
+        return None
+
+    sections: list[SectionInfo] = []
+    for level, title, page_number in toc:
+        if level > 2:
+            continue
+        title = title.strip()
+        if not title:
+            continue
+
+        # Try to split section number from title
+        m = _SECTION_NUMBER_RE.match(title)
+        if m:
+            section_number = m.group(1).rstrip(".")
+            section_name = title[m.end():].strip()
+        else:
+            section_number = ""
+            section_name = title
+
+        sections.append(SectionInfo(
+            section_number=section_number,
+            section_name=section_name,
+            page_start=page_number,
+        ))
+
+    if len(sections) < 4:
+        return None
+
+    return sections
+
+
+def _extract_sections_by_font(doc: fitz.Document) -> list[SectionInfo] | None:
+    """Heuristically detect section headers by font size and bold flags."""
+    # Step 1: Find body font size (the size with most total chars)
+    size_char_count: Counter[float] = Counter()
+    for page in doc:
+        blocks = page.get_text("dict")["blocks"]
+        for block in blocks:
+            for line in block.get("lines", []):
+                for span in line.get("spans", []):
+                    text = span.get("text", "")
+                    size = round(span.get("size", 0), 1)
+                    size_char_count[size] += len(text)
+
+    if not size_char_count:
+        return None
+
+    body_size = size_char_count.most_common(1)[0][0]
+
+    # Step 2: Find candidate headers
+    candidates: list[tuple[str, int]] = []  # (line_text, page_number)
+    for page_idx, page in enumerate(doc):
+        blocks = page.get_text("dict")["blocks"]
+        for block in blocks:
+            for line in block.get("lines", []):
+                spans = line.get("spans", [])
+                if not spans:
+                    continue
+
+                line_text = "".join(s.get("text", "") for s in spans).strip()
+                if not line_text or len(line_text) > 120:
+                    continue
+
+                # Check if any span is larger or bold
+                is_header_style = False
+                for span in spans:
+                    span_size = round(span.get("size", 0), 1)
+                    is_bold = bool(span.get("flags", 0) & _BOLD_FLAG)
+                    if span_size >= body_size + 0.5 or is_bold:
+                        is_header_style = True
+                        break
+
+                if not is_header_style:
+                    continue
+
+                # Check for section number prefix or known unnumbered header
+                has_number = bool(_SECTION_NUMBER_RE.match(line_text))
+                is_known = line_text.lower().strip().rstrip("s") in {
+                    k.rstrip("s") for k in _KNOWN_UNNUMBERED
+                } or line_text.lower().strip() in _KNOWN_UNNUMBERED
+
+                if has_number or is_known:
+                    candidates.append((line_text, page_idx + 1))
+
+    if len(candidates) < 4:
+        return None
+
+    # Step 3: Build SectionInfo list
+    sections: list[SectionInfo] = []
+    for line_text, page_number in candidates:
+        m = _SECTION_NUMBER_RE.match(line_text)
+        if m:
+            section_number = m.group(1).rstrip(".")
+            section_name = line_text[m.end():].strip()
+        else:
+            section_number = ""
+            section_name = line_text.strip()
+
+        sections.append(SectionInfo(
+            section_number=section_number,
+            section_name=section_name,
+            page_start=page_number,
+        ))
+
+    return sections
+
+
+def extract_structure_from_pdf(
+    pdf_bytes: bytes, metadata: dict
+) -> PaperStructure | None:
+    """
+    Try to extract paper structure directly from the PDF without an LLM call.
+    Returns PaperStructure on success, None to signal LLM fallback needed.
+    """
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+
+    try:
+        sections = _extract_toc_sections(doc)
+        if sections is None:
+            sections = _extract_sections_by_font(doc)
+        if sections is None:
+            return None
+    finally:
+        doc.close()
+
+    return PaperStructure(
+        title=metadata.get("title", ""),
+        abstract=metadata.get("abstract", ""),
+        authors=metadata.get("authors", []),
+        sections=sections,
+    )
