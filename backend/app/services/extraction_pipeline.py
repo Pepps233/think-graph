@@ -1,10 +1,9 @@
 """
-Four-pass GPT-4o extraction pipeline using instructor for structured outputs.
+GPT-4o extraction pipeline using instructor for structured outputs.
 
-Pass 1: PaperStructure  — section map with numbers and page ranges
+Pass 1: PaperStructure  — section map (PDF-native first, LLM fallback)
 Pass 2: PaperEntities   — all entities with full provenance metadata
-Pass 3: PaperRelationships — directed relationships between entities
-Pass 4: PaperReasoningFlow — ordered argument chain
+Pass 3: PaperRelationshipsAndReasoning — relationships + reasoning flow (merged)
 """
 
 import instructor
@@ -15,6 +14,7 @@ from app.models.extraction import (
     PaperEntities,
     PaperRelationships,
     PaperReasoningFlow,
+    PaperRelationshipsAndReasoning,
     PaperStructure,
 )
 from app.services.pdf_parser import ParsedPaper, rebuild_sections_from_structure
@@ -121,7 +121,16 @@ def extract_entities(parsed: ParsedPaper, structure: PaperStructure) -> PaperEnt
                     "Use type='figure' for figures/diagrams/graphs and type='table' for tables. "
                     "The 'description' should thoroughly describe what the figure/table shows, "
                     "its key takeaways, and how it relates to the paper's argument. "
-                    "Use the 'label' field for the reference label (e.g. 'Figure 1', 'Table 2')."
+                    "Use the 'label' field for the reference label (e.g. 'Figure 1', 'Table 2').\n\n"
+                    "FIELD RELEVANCE BY TYPE -- omit fields that do not apply:\n"
+                    "- equation: OMIT advantages, limitations. USE latex, description, simplified_explanation.\n"
+                    "- figure, table: OMIT advantages, limitations, key_equations, latex. USE description, label.\n"
+                    "- dataset: OMIT latex, key_equations. USE description, advantages, limitations.\n"
+                    "- citation: OMIT advantages, limitations, key_equations, latex. USE description only.\n"
+                    "- problem, limitation, future_work: OMIT latex, key_equations. USE description.\n"
+                    "- method, architecture: USE all fields (advantages, limitations, key_equations, description, simplified_explanation).\n"
+                    "- concept, experiment, result: OMIT latex. USE description, advantages, limitations as relevant.\n"
+                    "Set omitted fields to null or empty list. Do NOT fabricate content for irrelevant fields."
                 ),
             },
             {"role": "user", "content": user_content},
@@ -135,21 +144,18 @@ def extract_entities(parsed: ParsedPaper, structure: PaperStructure) -> PaperEnt
 # ---------------------------------------------------------------------------
 
 def extract_relationships(
-    parsed: ParsedPaper, entities: PaperEntities
+    entities: PaperEntities,
 ) -> PaperRelationships:
     """
     Identify directed relationships between extracted entities.
     Only emits relationships where both source and target are in the entity list.
     """
     entity_list = "\n".join(
-        f"- {e.title} ({e.type.value}): {e.description[:200]}"
+        f"- {e.title} ({e.type.value})"
         for e in entities.entities
     )
 
-    user_content = (
-        f"Paper entities:\n{entity_list}\n\n"
-        f"Paper text (summary):\n{parsed.raw_text[:20000]}"
-    )
+    user_content = f"Paper entities:\n{entity_list}"
 
     return _get_client().chat.completions.create(
         model="gpt-4o",
@@ -171,7 +177,7 @@ def extract_relationships(
 
 
 # ---------------------------------------------------------------------------
-# Pass 4: Reasoning Flow
+# Pass 4: Reasoning Flow (standalone, kept for backward compatibility)
 # ---------------------------------------------------------------------------
 
 def extract_reasoning_flow(
@@ -207,4 +213,53 @@ def extract_reasoning_flow(
             {"role": "user", "content": user_content},
         ],
         max_tokens=2048,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pass 3+4 Merged: Relationships + Reasoning Flow
+# ---------------------------------------------------------------------------
+
+def extract_relationships_and_reasoning(
+    entities: PaperEntities, structure: PaperStructure
+) -> PaperRelationshipsAndReasoning:
+    """
+    Extract both relationships and reasoning flow in a single LLM call.
+    """
+    entity_list = "\n".join(
+        f"- {e.title} ({e.type.value})"
+        for e in entities.entities
+    )
+
+    section_overview = "\n".join(
+        f"{s.section_number} {s.section_name}" for s in structure.sections
+    )
+
+    user_content = (
+        f"Title: {structure.title}\n"
+        f"Abstract: {structure.abstract}\n\n"
+        f"Section overview:\n{section_overview}\n\n"
+        f"Paper entities:\n{entity_list}"
+    )
+
+    return _get_client().chat.completions.create(
+        model="gpt-4o",
+        response_model=PaperRelationshipsAndReasoning,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are an expert at analyzing academic research papers. "
+                    "Perform BOTH tasks below.\n\n"
+                    "TASK 1 - RELATIONSHIPS: Identify directed relationships between the provided entities. "
+                    "Only emit relationships where both the source and target entity titles exactly match "
+                    "entries in the entity list. Use the most specific relationship type available.\n\n"
+                    "TASK 2 - REASONING FLOW: Extract the ordered reasoning chain from problem identification "
+                    "through to conclusions: Problem -> Limitations of Prior Work -> Proposed Method -> "
+                    "Experiments -> Results -> Conclusion. Each step should reference the section it comes from."
+                ),
+            },
+            {"role": "user", "content": user_content},
+        ],
+        max_tokens=4096,
     )

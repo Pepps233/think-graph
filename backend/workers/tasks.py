@@ -71,9 +71,10 @@ def ingest_paper(self, job_id: str, paper_id: str, source: str, source_type: str
         from app.services.extraction_pipeline import (
             extract_structure,
             extract_entities,
-            extract_relationships,
-            extract_reasoning_flow,
+            extract_relationships_and_reasoning,
         )
+        from app.services.pdf_parser import extract_structure_from_pdf
+        from app.models.extraction import PaperRelationships, PaperReasoningFlow
         from app.services.graph_writer import (
             cache_llm_output,
             write_edges,
@@ -81,20 +82,24 @@ def ingest_paper(self, job_id: str, paper_id: str, source: str, source_type: str
             write_reasoning_nodes,
         )
 
+        # Step 3a: Extract structure (PDF-native first, LLM fallback)
         _update_job(db, job_id, "processing", "Extracting structure", 35)
-        structure = extract_structure(parsed, metadata)
+        structure = extract_structure_from_pdf(pdf_bytes, metadata)
+        if structure is None:
+            structure = extract_structure(parsed, metadata)
         cache_llm_output(db, paper_id, "structure", structure.model_dump())
 
-        _update_job(db, job_id, "processing", "Extracting entities", 50)
+        # Step 3b: Extract entities
+        _update_job(db, job_id, "processing", "Extracting entities", 55)
         entities = extract_entities(parsed, structure)
         cache_llm_output(db, paper_id, "entities", entities.model_dump())
 
-        _update_job(db, job_id, "processing", "Extracting relationships", 70)
-        relationships = extract_relationships(parsed, entities)
+        # Step 3c: Extract relationships + reasoning flow (single call)
+        _update_job(db, job_id, "processing", "Extracting relationships", 80)
+        combined = extract_relationships_and_reasoning(entities, structure)
+        relationships = PaperRelationships(relationships=combined.relationships)
+        flow = PaperReasoningFlow(steps=combined.reasoning_steps)
         cache_llm_output(db, paper_id, "relationships", relationships.model_dump())
-
-        _update_job(db, job_id, "processing", "Extracting reasoning flow", 85)
-        flow = extract_reasoning_flow(parsed, structure)
         cache_llm_output(db, paper_id, "reasoning_flow", flow.model_dump())
 
         # Persist graph to DB
