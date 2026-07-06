@@ -1,5 +1,7 @@
 # ThinkGraph AI
 
+https://github.com/user-attachments/assets/9dd39d02-2c83-489b-84fe-1b743f6ae387
+
 An AI-powered platform that converts academic research papers into interactive knowledge graphs. Paste an arXiv URL or upload a PDF and instantly explore the paper's concepts, methods, citations, and reasoning as a navigable visual graph.
 
 ## Features
